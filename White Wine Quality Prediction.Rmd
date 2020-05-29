@@ -1,0 +1,247 @@
+---
+title: "Qhite Wine Quality Prediction"
+date: "April 20, 2019"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+
+
+```{r}
+wine_white <- read.csv("/Users/hhuang/Desktop/2019 spring/632/project/wineQualityWhites.csv", header = TRUE)
+head(wine_white)
+dim(wine_white)
+str(wine_white)
+```
+
+
+```{r}
+sapply(wine_white, function(x) sum(is.na(x)))
+```
+
+
+```{r}
+wine_white <- wine_white[,-1]
+wine_white$quality <- as.numeric(wine_white$quality)
+head(wine_white)
+hist(wine_white$quality)
+summary(wine_white)
+```
+
+```{r}
+pairs(quality ~ ., data = wine_white)
+```
+
+
+```{r}
+library(leaps)
+regsub_fit <- regsubsets(quality ~ ., data = wine_white, nvmax=11)
+regsub_summ <- summary(regsub_fit)
+
+attributes(regsub_summ)
+
+round(regsub_summ$rsq, 4)
+
+round(regsub_summ$adjr2, 4)
+
+which.max(regsub_summ$adjr2)
+
+coef(regsub_fit, 8)
+```
+
+```{r}
+n <- nrow(wine_white)
+aic_vec <- n*log(regsub_summ$rss/n) + 2*c(1:11)
+
+par(mfrow=c(1,3), mar=c(4.5, 4.5, 1, 1))
+plot(c(1:11), regsub_summ$adjr2, xlab="Number of Variables", ylab="Adjusted RSqr")
+abline(v=which.max(regsub_summ$adjr2))
+
+plot(c(1:11), aic_vec, xlab="Number of Variables", ylab="AIC")
+abline(v=which.min(aic_vec))
+
+plot(c(1:11), regsub_summ$bic, xlab="Number of Variables", ylab="BIC")
+abline(v=which.min(regsub_summ$bic))
+```
+
+
+```{r}
+which.min(aic_vec)
+coef(regsub_fit, 8)
+
+which.min(regsub_summ$bic)
+coef(regsub_fit, 8)
+```
+
+
+```{r}
+wine_full <- lm(quality ~ ., data = wine_white)
+wine_sw <- step(wine_full)
+summary(wine_sw)
+```
+
+```{r}
+lm_wine1 <- lm(quality ~ fixed.acidity + volatile.acidity + residual.sugar + free.sulfur.dioxide + density + pH + sulphates + alcohol, data = wine_white)
+```
+
+We can write the model lm_loan1 as $CCAvg = \beta_0 + \beta_1 Age + \beta_2 Experience+ \beta_3 Income +  \beta_4 Family + \beta_5 Education + \beta_6 Mortgage + \beta_7 Personal.Loan + \beta_8 CD.Account + \beta_9 Online +e$
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(GGally)
+wine_white %>% 
+  select(quality, fixed.acidity, volatile.acidity, residual.sugar, free.sulfur.dioxide, density, pH, sulphates, alcohol) %>% 
+  ggpairs()
+```
+
+```{r}
+wine_null <- lm(quality ~ 1, data = wine_white)
+anova(wine_null ,lm_wine1)
+```
+
+Since the p-value < 0.001, we reject the null hypothesis that$\beta_1 = \cdots = \beta_9 = 0$. Thus, we conclude, that at least one predictor is associated with the average spending on credit cards per month ($000).
+
+```{r}
+summary(lm_wine1)
+```
+
+```{r}
+plot(lm_wine1, which = 2)
+```
+
+Not noraml.
+
+```{r}
+plot(lm_wine1, which = 1)
+```
+
+No linear and no constant variance.
+
+Therefore, we need transformation.
+
+
+```{r}
+library(car)
+summary(powerTransform(cbind(fixed.acidity, volatile.acidity, residual.sugar, free.sulfur.dioxide, density, pH, sulphates, alcohol) ~ 1, wine_white))
+```
+
+```{r}
+lm_wine2 <- lm(quality ~ log(fixed.acidity) + log(volatile.acidity) + sqrt(residual.sugar) + sqrt(free.sulfur.dioxide) + density + 1/sqrt(pH) + log(sulphates) + sqrt(alcohol), data = wine_white)
+```
+
+```{r}
+pairs(quality ~ log(fixed.acidity) + log(volatile.acidity) + sqrt(residual.sugar) + sqrt(free.sulfur.dioxide) + density + 1/sqrt(pH) + log(sulphates) + sqrt(alcohol), data = wine_white)
+```
+
+```{r}
+plot(lm_wine2, which = 1)
+```
+
+```{r}
+plot(lm_wine2, which = 2)
+```
+
+```{r}
+boxCox(lm_wine2)
+summary(powerTransform(lm_wine2))
+```
+
+```{r}
+lm_wine3 <- lm(quality^0.76 ~ log(fixed.acidity) + log(volatile.acidity) + sqrt(residual.sugar) + sqrt(free.sulfur.dioxide) + density + 1/sqrt(pH) + log(sulphates) + sqrt(alcohol), data = wine_white)
+
+summary(lm_wine3)
+```
+
+```{r}
+par(mfrow=c(1,3), mar=c(4.5, 4.5, 2, 2))
+plot(lm_wine3, c(1:2))
+plot(predict(lm_wine3), (wine_white$quality)^0.76, xlab="Fitted Values", ylab="log(quality)")
+lines(lowess(predict(lm_wine3), (wine_white$quality)^0.76), col='red')
+abline(0,1)
+```
+
+```{r}
+plot(predict(lm_wine1), wine_white$quality, xlab="Fitted Values", ylab="log(quality)")
+lines(lowess(predict(lm_wine1), wine_white$quality), col='red')
+abline(0,1)
+```
+
+```{r}
+plot(lm_wine3,which = 5)
+```
+
+```{r}
+p <- 8 
+n <- nrow(wine_white) 
+plot(hatvalues(lm_wine3), rstandard(lm_wine3), xlab= 'Leverage' , ylab= 'Standardized Residuals') 
+abline(h = c(-4,4),v = 2*(p+1)/n, lty=2)
+```
+
+####K-Fold Cross-Validation
+
+```{r}
+str(wine_white)
+x <- model.matrix(quality ~ ., data=wine_white)[, -12]
+y <- wine_white$quality
+n <- nrow(x)
+
+compute_mse <- function(y, y_pred) {
+  n <- length(y)
+  (1 / n) * sum((y - y_pred)^2)
+}
+```
+
+```{r}
+library(caret)
+set.seed(999)
+(folds <- createFolds(y, k=10))
+```
+
+```{r}
+mse_vec <- rep(0, 10)
+n_vec <- rep(0, 10)
+for(k in 1:10) {
+  test <- folds[[k]]
+  y_test <- y[test]
+  y_train <- y[-test]
+  x_test <- as.data.frame(x[test, ])
+  x_train <- as.data.frame(x[-test, ])
+  lm_fit <- lm(y_train ~ ., data = x_train)
+  lm_pred <- predict(lm_fit, newdata = x_test)
+  mse_vec[k] <- compute_mse(y_test, lm_pred)
+  n_vec[k] <- length(folds[[k]])
+}
+
+sqrt((1 / n) * sum(n_vec * mse_vec))
+```
+
+```{r}
+train_idx <- sample(n, size = floor(0.7 * n))
+
+x_train <- x[train_idx, ]
+nrow(x_train)
+
+x_test <- x[-train_idx, ]
+nrow(x_test)
+
+y_train <- y[train_idx]
+
+y_test <- y[-train_idx]
+```
+
+```{r}
+lm_wine4 <- lm(quality^0.76 ~ log(fixed.acidity) + log(volatile.acidity) + sqrt(residual.sugar) + sqrt(free.sulfur.dioxide) + density + 1/sqrt(pH) + log(sulphates) + sqrt(alcohol), data = wine_white, subset = train_idx)
+
+compute_rmse <- function(y, y_pred) {
+  n <- length(y)
+  sqrt((1 / n) * sum((y - y_pred)^2))
+}
+
+wine_pred <- predict(lm_wine4, newdata = wine_white[-train_idx, ])
+rmse_full <- compute_rmse(y_test, wine_pred)
+rmse_full
+```
+
